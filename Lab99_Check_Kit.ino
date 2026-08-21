@@ -83,7 +83,7 @@ bool xbee_query(const char *command, char *value, size_t value_size) {
 }
 
 bool run_led_test(void) {
-  log_progress("LED: blinking pins 25/29/24 — confirm visually");
+  log_progress("LED: ピン 25/29/24 を点滅します — 目視確認してください");
   for (size_t i = 0; i < BOARD_LED_COUNT; i++) {
     pinMode(BOARD_LEDS[i], OUTPUT);
     digitalWrite(BOARD_LEDS[i], LOW);
@@ -114,7 +114,7 @@ bool run_eps_test(void) {
 }
 
 bool run_current_test(void) {
-  log_progress("CURRENT: shine light on solar panel; watch ISOL change");
+  log_progress("CURRENT: 太陽電池に光を当てて ISOL の変化を確認してください");
   float isol = 0.0f;
   float ibus = 0.0f;
   float ichg = 0.0f;
@@ -346,17 +346,17 @@ bool run_xbee_rx_test(void) {
   }
   delay(1200);
 
-  log_progress("XBEE_RX: send any command from your PC via XBee within 30s");
+  log_progress("XBEE_RX: パソコンから XBee でコマンドを送ってください (30s)");
   uint32_t start_ms = millis();
   while ((uint32_t)(millis() - start_ms) < XBEE_RX_TIMEOUT_MS) {
     if (com.is_cmd_received()) {
       char cmd = com.get_command();
-      log_progress("XBEE_RX: OK (got '%c')", cmd);
+      log_progress("XBEE_RX: OK (受信 '%c')", cmd);
       return true;
     }
     delay(1);
   }
-  log_progress("XBEE_RX: NG (timeout — no command from PC)");
+  log_progress("XBEE_RX: NG (タイムアウト — PC からコマンドが来ませんでした)");
   return false;
 }
 
@@ -465,7 +465,7 @@ void setup(void) {
   gps_uart_live = true;
 
   log_progress("BOOT READY FW=Lab99_Check_Kit VER=1");
-  log_progress("Send a/l/e/i/t/m/s/c/g/n/p then Enter");
+  log_progress("コマンド a/l/e/i/t/m/s/c/g/n/p を送信して Enter");
 }
 
 void loop(void) {
