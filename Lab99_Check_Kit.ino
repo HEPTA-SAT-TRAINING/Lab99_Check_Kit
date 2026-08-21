@@ -63,6 +63,7 @@ void xbee_resume_gps_pio(void) {
 bool xbee_enter_command_mode(void) {
   xbee_pause_gps_pio();
   if (!com.enter_command_mode()) {
+    xbee_resume_gps_pio();
     return false;
   }
   return true;
@@ -235,10 +236,12 @@ bool run_camera_test(void) {
   bool ok = sensor.camera_snapshot(filename);
   if (!ok) {
     log_progress("CAM: NG (capture failed)");
+    sensor.camera_invalidate();
     return false;
   }
   if (!cdh.file_exists(filename)) {
     log_progress("CAM: NG (file missing)");
+    sensor.camera_invalidate();
     return false;
   }
   File file = cdh.open_file(filename, FILE_READ);
@@ -246,6 +249,7 @@ bool run_camera_test(void) {
   if (file) {
     file.close();
   }
+  sensor.camera_invalidate();
   pinMode(0, OUTPUT);
   digitalWrite(0, HIGH);
   pinMode(3, OUTPUT);
