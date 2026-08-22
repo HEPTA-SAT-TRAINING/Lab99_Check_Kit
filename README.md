@@ -1,77 +1,77 @@
 # Lab99 Check Kit
 
-HEPTA-SAT Full の手動動作確認用 Arduino スケッチです。
+Manual verification Arduino sketches for HEPTA-SAT Full.
 
-スタッフ用のフルキット（ステーション自動検査・Python ツール）は別リポジトリです:  
+The staff full kit (station automation and Python tools) lives in a separate repository:  
 https://github.com/HEPTA-SAT-TRAINING/Lab99_Check_Kit_Staff
 
-## 内容
+## Contents
 
-| パス | 説明 |
+| Path | Description |
 | --- | --- |
-| `Lab99_Check_Kit.ino` | 手動検証スケッチ |
-| `empty_sketch/empty_sketch.ino` | 検査後に残す空スケッチ（USB CDC 維持） |
-| `src/` | [HEPTA-SAT-Library](https://github.com/HEPTA-SAT-TRAINING/HEPTA-SAT-Library) サブモジュール |
+| `Lab99_Check_Kit.ino` | Manual verification sketch |
+| `empty_sketch/empty_sketch.ino` | Idle sketch left after inspection (keeps USB CDC) |
+| `src/` | [HEPTA-SAT-Library](https://github.com/HEPTA-SAT-TRAINING/HEPTA-SAT-Library) submodule |
 
-## セットアップ
+## Setup
 
 ```bash
 git clone --recurse-submodules https://github.com/HEPTA-SAT-TRAINING/Lab99_Check_Kit.git
 cd Lab99_Check_Kit
 ```
 
-既に clone 済みなら:
+If the repo is already cloned:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-Arduino IDE で `Lab99_Check_Kit.ino` を開き、HEPTA-SAT Full（RP2040）向けに書き込んでください。
+Open `Lab99_Check_Kit.ino` in the Arduino IDE and upload it for HEPTA-SAT Full (RP2040).
 
-## 使い方
+## Usage
 
-1. USB でキットを接続し、Serial Monitor を **9600 baud** で開く
-2. 対向 XBee を PC に接続している場合は、そちらでも進捗（`From Sat:`）が見える
-3. コマンド 1 文字を送り、Enter（改行）する
+1. Connect the kit over USB and open the Serial Monitor at **9600 baud**
+2. If a peer XBee is connected to your PC, progress also appears there (`From Sat:`)
+3. Send a one-character command, then press Enter
 
-### コマンド
+### Commands
 
-| コマンド | 内容 |
+| Command | Action |
 | --- | --- |
-| `a` | すべて実行（XBee 受信テストは最後） |
-| `l` | 基板 LED（ピン 25 / 29 / 24）点滅 |
-| `e` | EPS（電圧） |
-| `i` | 検流計（ISOL / IBUS / ICHG）。太陽電池に光を当てて ISOL の変化を確認 |
-| `t` | 温度 |
+| `a` | Run all tests (XBee RX test last) |
+| `l` | Blink board LEDs (pins 25 / 29 / 24) |
+| `e` | EPS voltages |
+| `i` | Current sense / ammeter (ISOL / IBUS / ICHG). Shine light on the solar panel and watch ISOL change |
+| `t` | Temperature |
 | `m` | IMU |
-| `s` | SD 読み書き |
-| `c` | カメラ撮影（SD へ JPEG） |
-| `g` | GPS NMEA センテンス有無（FIX 不要） |
-| `n` | XBee AT 識別 |
-| `p` | XBee 受信テスト（対話式） |
+| `s` | SD read/write |
+| `c` | Camera capture (JPEG to SD) |
+| `g` | GPS NMEA sentence present (FIX not required) |
+| `n` | XBee AT identity |
+| `p` | Interactive XBee RX test |
 
-### 進捗表示の見分け
+### Distinguishing progress output
 
-同じ進捗が 2 経路に出ます。
+The same progress messages go out on two paths.
 
-| 経路 | プレフィックス | 見る場所 |
+| Path | Prefix | Where to read it |
 | --- | --- | --- |
-| USB（CDH） | `[CDH]` | Arduino Serial Monitor |
-| XBee（COM） | `From Sat:` | PC 側の XBee 受信 |
+| USB (CDH) | `[CDH]` | Arduino Serial Monitor |
+| XBee (COM) | `From Sat:` | Peer XBee on the PC |
 
-### XBee 受信テスト (`p`)
+### XBee RX test (`p`)
 
-1. `p` を送る
-2. `[CDH]` / `From Sat:` に「PC から XBee でコマンドを送ってください」と出る
-3. 対向 XBee から任意の 1 文字（など）を送る
-4. 衛星が受信したら `XBEE_RX: OK`
+1. Send `p`
+2. `[CDH]` / `From Sat:` ask you to send a command from the PC via XBee
+3. Send any single character (or similar) from the peer XBee
+4. When the kit receives it, you get `XBEE_RX: OK`
 
-30 秒以内に届かない場合は NG です。あらかじめ XBee 同士がペア済みであること。
+If nothing arrives within 30 seconds, the result is NG. The XBee pair must already be configured.
 
-### 検流計 (`i`)
+### Current sense / ammeter (`i`)
 
-5 秒ほど電流をサンプルします。屋内でも `IBUS` は通常 0 より大きくなります。`ISOL` は太陽電池に光を当てると増えることを目視確認してください。すべて 0 固定なら配線 / MCP3208 / シャント系を疑ってください。
+Samples currents for about five seconds. Indoors, `IBUS` is usually greater than zero. Confirm that `ISOL` rises when you shine light on the solar panel. If all currents stay stuck at zero, check wiring, the MCP3208, and the shunt path.
 
-## 空スケッチ
+## Empty sketch
 
-検査後に何もしないファームを残す場合は `empty_sketch/empty_sketch.ino` を書き込んでください。USB は COM ポートのまま残ります。
+To leave an idle firmware after inspection, upload `empty_sketch/empty_sketch.ino`. USB remains available as a COM port.
