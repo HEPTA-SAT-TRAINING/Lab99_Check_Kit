@@ -30,9 +30,13 @@ Open `Lab99_Check_Kit.ino` in the Arduino IDE and upload it for HEPTA-SAT Full (
 
 ## Usage
 
-1. Connect the kit over USB and open the Serial Monitor at **9600 baud**
-2. If a peer XBee is connected to your PC, progress also appears there (`From Sat:`)
-3. Send a one-character command, then press Enter
+Use the peer XBee on the PC with [HEPTA-SAT-Serial_Monitor](https://hepta-sat-training.github.io/HEPTA-SAT-Serial_Monitor/) (baud **38400**). Progress also appears on USB (`[CDH]`, 9600 baud).
+
+1. Connect the peer XBee, open HEPTA-SAT-Serial_Monitor, and wait for `BOOT READY`
+2. The kit asks for **DATE**, **KIT** name, and **OPERATOR** (any text, one field at a time). Type each value and press **Send**
+   - EOL may be **None** (the whole field is sent at once) or **LF** / **CRLF**
+3. Those fields are printed as a `SESSION` line so **Save Log** keeps them with the test output
+4. Send a one-character command (`a`, `l`, …), then **Send** / Enter
 
 ### Commands
 
@@ -49,6 +53,16 @@ Open `Lab99_Check_Kit.ino` in the Arduino IDE and upload it for HEPTA-SAT Full (
 | `g` | GPS NMEA sentence present (FIX not required) |
 | `n` | XBee AT identity |
 | `p` | Interactive XBee RX test |
+
+### Session header (DATE / KIT / OPERATOR)
+
+On boot the kit waits for three strings from the XBee uplink (HEPTA-SAT-Serial_Monitor). Empty input is stored as `-`. The values are echoed immediately and again at the start of `a` (run all):
+
+```text
+From Sat: SESSION DATE=2026-08-25 KIT=KIT-04 OPERATOR=n_mas
+```
+
+Use **Save Log** in HEPTA-SAT-Serial_Monitor to keep this header with the later test lines.
 
 ### Distinguishing progress output
 

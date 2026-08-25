@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <SD.h>
+#include <ctype.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -19,13 +20,19 @@ static const uint32_t CURRENT_SAMPLE_INTERVAL_MS = 1000;
 static const uint32_t GPS_SENTENCE_TIMEOUT_MS = 3000;
 static const uint32_t XBEE_RX_TIMEOUT_MS = 30000;
 static const uint32_t XBEE_AT_TIMEOUT_MS = 1000;
+static const uint32_t XBEE_LINE_IDLE_MS = 300;
 static const size_t SERIAL_LINE_MAX = 80;
+static const size_t SESSION_FIELD_MAX = 64;
 static const size_t LOG_MSG_MAX = 160;
 
 static uint32_t image_index = 1;
 static char serial_line[SERIAL_LINE_MAX];
 static size_t serial_line_len = 0;
 static bool gps_uart_live = false;
+
+static char session_date[SESSION_FIELD_MAX] = "-";
+static char session_kit[SESSION_FIELD_MAX] = "-";
+static char session_operator[SESSION_FIELD_MAX] = "-";
 
 void log_progress(const char *fmt, ...) {
   char body[LOG_MSG_MAX];
@@ -36,6 +43,128 @@ void log_progress(const char *fmt, ...) {
 
   cdh.printf("[CDH] %s\n", body);
   com.printf("From Sat: %s\n", body);
+}
+
+void sanitize_session_field(char *s, size_t size) {
+  if (s == NULL || size == 0) {
+    return;
+  }
+
+  size_t start = 0;
+  while (s[start] != '\0' && isspace((unsigned char)s[start])) {
+    start++;
+  }
+  if (start > 0) {
+    memmove(s, s + start, strlen(s + start) + 1);
+  }
+
+  size_t n = strlen(s);
+  while (n > 0 && isspace((unsigned char)s[n - 1])) {
+    s[--n] = '\0';
+  }
+
+  for (size_t i = 0; s[i] != '\0'; i++) {
+    unsigned char c = (unsigned char)s[i];
+    if (c < 0x20 || c == '=' || c == ',') {
+      s[i] = '_';
+    }
+  }
+
+  if (s[0] == '\0') {
+    strncpy(s, "-", size);
+    s[size - 1] = '\0';
+  }
+}
+
+bool read_session_line(char *out, size_t out_size) {
+  if (out == NULL || out_size == 0) {
+    return false;
+  }
+
+  size_t n = 0;
+  bool xbee_started = false;
+  uint32_t last_xbee_ms = 0;
+  out[0] = '\0';
+
+  uint32_t drain_ms = millis();
+  while ((uint32_t)(millis() - drain_ms) < 50) {
+    if (com.available()) {
+      char c = com.get_char();
+      if (c == '\r' || c == '\n') {
+        continue;
+      }
+      if (n + 1 < out_size) {
+        out[n++] = c;
+        out[n] = '\0';
+      }
+      xbee_started = true;
+      last_xbee_ms = millis();
+      break;
+    }
+    if (Serial.available() > 0) {
+      break;
+    }
+    delay(1);
+  }
+
+  while (true) {
+    while (Serial.available() > 0) {
+      char c = (char)Serial.read();
+      if (c == '\r') {
+        continue;
+      }
+      if (c == '\n') {
+        sanitize_session_field(out, out_size);
+        return true;
+      }
+      if (n + 1 < out_size) {
+        out[n++] = c;
+        out[n] = '\0';
+      }
+    }
+
+    if (com.available()) {
+      char c = com.get_char();
+      if (c == '\r' || c == '\n') {
+        sanitize_session_field(out, out_size);
+        return true;
+      }
+      if (n + 1 < out_size) {
+        out[n++] = c;
+        out[n] = '\0';
+      }
+      xbee_started = true;
+      last_xbee_ms = millis();
+      continue;
+    }
+
+    if (xbee_started && (uint32_t)(millis() - last_xbee_ms) >= XBEE_LINE_IDLE_MS) {
+      sanitize_session_field(out, out_size);
+      return true;
+    }
+
+    delay(1);
+  }
+}
+
+void prompt_session_info(void) {
+  log_progress("SESSION: enter DATE (any text), then Send in HEPTA-SAT-Serial_Monitor");
+  read_session_line(session_date, sizeof(session_date));
+  log_progress("SESSION: DATE=%s", session_date);
+
+  log_progress("SESSION: enter KIT name (any text), then Send");
+  read_session_line(session_kit, sizeof(session_kit));
+  log_progress("SESSION: KIT=%s", session_kit);
+
+  log_progress("SESSION: enter OPERATOR (any text), then Send");
+  read_session_line(session_operator, sizeof(session_operator));
+  log_progress("SESSION: OPERATOR=%s", session_operator);
+
+  log_progress(
+      "SESSION DATE=%s KIT=%s OPERATOR=%s",
+      session_date,
+      session_kit,
+      session_operator);
 }
 
 void make_next_image_filename(char *out, size_t out_size) {
@@ -84,7 +213,7 @@ bool xbee_query(const char *command, char *value, size_t value_size) {
 }
 
 bool run_led_test(void) {
-  log_progress("LED: ピン 25/29/24 を点滅します — 目視確認してください");
+  log_progress("LED: blinking pins 25/29/24 — confirm visually");
   for (size_t i = 0; i < BOARD_LED_COUNT; i++) {
     pinMode(BOARD_LEDS[i], OUTPUT);
     digitalWrite(BOARD_LEDS[i], LOW);
@@ -115,7 +244,7 @@ bool run_eps_test(void) {
 }
 
 bool run_current_test(void) {
-  log_progress("CURRENT: 太陽電池に光を当てて ISOL の変化を確認してください");
+  log_progress("CURRENT: shine light on the solar panel and watch ISOL change");
   float isol = 0.0f;
   float ibus = 0.0f;
   float ichg = 0.0f;
@@ -350,21 +479,26 @@ bool run_xbee_rx_test(void) {
   }
   delay(1200);
 
-  log_progress("XBEE_RX: パソコンから XBee でコマンドを送ってください (30s)");
+  log_progress("XBEE_RX: send a command from the PC via XBee (30s)");
   uint32_t start_ms = millis();
   while ((uint32_t)(millis() - start_ms) < XBEE_RX_TIMEOUT_MS) {
     if (com.is_cmd_received()) {
       char cmd = com.get_command();
-      log_progress("XBEE_RX: OK (受信 '%c')", cmd);
+      log_progress("XBEE_RX: OK (received '%c')", cmd);
       return true;
     }
     delay(1);
   }
-  log_progress("XBEE_RX: NG (タイムアウト — PC からコマンドが来ませんでした)");
+  log_progress("XBEE_RX: NG (timeout — no command from PC)");
   return false;
 }
 
 bool run_test_all(void) {
+  log_progress(
+      "SESSION DATE=%s KIT=%s OPERATOR=%s",
+      session_date,
+      session_kit,
+      session_operator);
   bool ok = true;
   ok = run_led_test() && ok;
   ok = run_eps_test() && ok;
@@ -428,6 +562,16 @@ void handle_command(char cmd) {
   log_progress("COMMAND_DONE: '%c' %s", cmd, ok ? "OK" : "NG");
 }
 
+void poll_xbee_commands(void) {
+  if (!com.is_cmd_received()) {
+    return;
+  }
+  char cmd = com.get_command();
+  if (cmd != '\0') {
+    handle_command(cmd);
+  }
+}
+
 void poll_serial_commands(void) {
   while (Serial.available() > 0) {
     char c = (char)Serial.read();
@@ -468,11 +612,13 @@ void setup(void) {
   sensor.begin();
   gps_uart_live = true;
 
-  log_progress("BOOT READY FW=Lab99_Check_Kit VER=1");
-  log_progress("コマンド a/l/e/i/t/m/s/c/g/n/p を送信して Enter");
+  log_progress("BOOT READY FW=Lab99_Check_Kit VER=2");
+  prompt_session_info();
+  log_progress("Send command a/l/e/i/t/m/s/c/g/n/p then Enter/Send");
 }
 
 void loop(void) {
   poll_serial_commands();
+  poll_xbee_commands();
   delay(1);
 }
