@@ -35,14 +35,14 @@ Use the peer XBee on the PC with [HEPTA-SAT-Serial_Monitor](https://hepta-sat-tr
 1. Connect the peer XBee, open HEPTA-SAT-Serial_Monitor, and wait for `BOOT READY`
 2. The kit asks for **DATE**, **KIT** name, and **OPERATOR** (any text, one field at a time). Type each value and press **Send**
    - EOL may be **None** (the whole field is sent at once) or **LF** / **CRLF**
-3. Those fields are printed as a `SESSION` line so **Save Log** keeps them with the test output
-4. Send a one-character command (`a`, `l`, …), then **Send** / Enter
+3. Those fields are printed in the log so **Save Log** keeps them with the test output
+4. All tests start automatically (same as command `a`). When finished, send `a` or individual commands to re-run
 
 ### Commands
 
 | Command | Action |
 | --- | --- |
-| `a` | Run all tests (XBee RX test last) |
+| `a` | Run all tests (also runs automatically after session metadata; XBee RX test last) |
 | `l` | Blink OBC board LEDs (`HEPTA_OBC_LED1`–`3`) |
 | `e` | EPS voltages |
 | `i` | Current sense / ammeter (ISOL / IBUS / ICHG). Shine light on the solar panel and watch ISOL change |
@@ -56,7 +56,7 @@ Use the peer XBee on the PC with [HEPTA-SAT-Serial_Monitor](https://hepta-sat-tr
 
 ### Session header (DATE / KIT / OPERATOR)
 
-On boot the kit waits for three strings from the XBee uplink (HEPTA-SAT-Serial_Monitor). Empty input is stored as `-`. The values are echoed immediately and again at the start of `a` (run all):
+On boot the kit waits for three strings from the XBee uplink (HEPTA-SAT-Serial_Monitor). Empty input is stored as `-`. After **OPERATOR** is entered, all tests start automatically. The session header is logged again at the start of the run:
 
 ```text
 From Sat: SESSION DATE=2026-08-25 KIT=KIT-04 OPERATOR=n_mas

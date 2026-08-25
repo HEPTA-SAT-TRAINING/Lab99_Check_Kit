@@ -157,12 +157,6 @@ void prompt_session_info(void) {
   log_progress("SESSION: enter OPERATOR (any text), then Send");
   read_session_line(session_operator, sizeof(session_operator));
   log_progress("SESSION: OPERATOR=%s", session_operator);
-
-  log_progress(
-      "SESSION DATE=%s KIT=%s OPERATOR=%s",
-      session_date,
-      session_kit,
-      session_operator);
 }
 
 void make_next_image_filename(char *out, size_t out_size) {
@@ -602,9 +596,10 @@ void setup(void) {
   sensor.begin();
   gps_uart_live = true;
 
-  log_progress("BOOT READY FW=Lab99_Check_Kit VER=2");
+  log_progress("BOOT READY FW=Lab99_Check_Kit VER=3");
   prompt_session_info();
-  log_progress("Send command a/l/e/i/t/m/s/c/g/n/p then Enter/Send");
+  handle_command('a');
+  log_progress("All tests finished. Send a/l/e/i/t/m/s/c/g/n/p to re-run individual tests");
 }
 
 void loop(void) {
