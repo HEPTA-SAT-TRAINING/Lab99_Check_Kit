@@ -1,4 +1,4 @@
-# Lab99 Check Kit
+# System-Check
 
 Manual verification Arduino sketches for HEPTA-SAT Full.
 
@@ -9,15 +9,15 @@ https://github.com/HEPTA-SAT-TRAINING/Lab99_Check_Kit_Staff
 
 | Path | Description |
 | --- | --- |
-| `Lab99_Check_Kit.ino` | Manual verification sketch |
+| `System-Check.ino` | Manual verification sketch |
 | `empty_sketch/empty_sketch.ino` | Idle sketch left after inspection (keeps USB CDC) |
 | `src/` | [HEPTA-SAT-Library](https://github.com/HEPTA-SAT-TRAINING/HEPTA-SAT-Library) submodule |
 
 ## Setup
 
 ```bash
-git clone --recurse-submodules https://github.com/HEPTA-SAT-TRAINING/Lab99_Check_Kit.git
-cd Lab99_Check_Kit
+git clone --recurse-submodules https://github.com/HEPTA-SAT-TRAINING/System-Check.git
+cd System-Check
 ```
 
 If the repo is already cloned:
@@ -26,7 +26,7 @@ If the repo is already cloned:
 git submodule update --init --recursive
 ```
 
-Open `Lab99_Check_Kit.ino` in the Arduino IDE and upload it for HEPTA-SAT Full (RP2040).
+Open `System-Check.ino` in the Arduino IDE and upload it for HEPTA-SAT Full (RP2040).
 
 ## Usage
 

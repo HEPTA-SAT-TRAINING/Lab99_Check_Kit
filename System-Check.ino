@@ -320,7 +320,7 @@ bool run_imu_test(void) {
 
 bool run_sd_test(void) {
   const char *filename = "CHECK.TXT";
-  const char *payload = "Lab99_Check_Kit";
+  const char *payload = "System-Check";
   File file = cdh.create_file(filename);
   if (!file) {
     log_progress("SD: NG (open write failed)");
@@ -596,7 +596,7 @@ void setup(void) {
   sensor.begin();
   gps_uart_live = true;
 
-  log_progress("BOOT READY FW=Lab99_Check_Kit VER=3");
+  log_progress("BOOT READY FW=System-Check VER=3");
   prompt_session_info();
   handle_command('a');
   log_progress("All tests finished. Send a/l/e/i/t/m/s/c/g/n/p to re-run individual tests");
