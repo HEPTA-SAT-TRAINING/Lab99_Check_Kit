@@ -43,7 +43,7 @@ Use the peer XBee on the PC with [HEPTA-SAT-Serial_Monitor](https://hepta-sat-tr
 | Command | Action |
 | --- | --- |
 | `a` | Run all tests (XBee RX test last) |
-| `l` | Blink board LEDs (pins 25 / 29 / 24) |
+| `l` | Blink OBC board LEDs (`HEPTA_OBC_LED1`–`3`) |
 | `e` | EPS voltages |
 | `i` | Current sense / ammeter (ISOL / IBUS / ICHG). Shine light on the solar panel and watch ISOL change |
 | `t` | Temperature |

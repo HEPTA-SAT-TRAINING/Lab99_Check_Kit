@@ -13,8 +13,6 @@ HeptaCom com;
 HeptaEps eps;
 HeptaSensor sensor;
 
-static const uint8_t BOARD_LEDS[] = {25, 29, 24};
-static const size_t BOARD_LED_COUNT = 3;
 static const uint32_t CURRENT_SAMPLE_COUNT = 5;
 static const uint32_t CURRENT_SAMPLE_INTERVAL_MS = 1000;
 static const uint32_t GPS_SENTENCE_TIMEOUT_MS = 3000;
@@ -213,18 +211,18 @@ bool xbee_query(const char *command, char *value, size_t value_size) {
 }
 
 bool run_led_test(void) {
-  log_progress("LED: blinking pins 25/29/24 — confirm visually");
-  for (size_t i = 0; i < BOARD_LED_COUNT; i++) {
-    pinMode(BOARD_LEDS[i], OUTPUT);
-    digitalWrite(BOARD_LEDS[i], LOW);
+  log_progress("LED: blinking OBC LEDs — confirm visually");
+  for (size_t i = 0; i < HEPTA_OBC_LED_COUNT; i++) {
+    pinMode(HEPTA_OBC_LEDS[i], OUTPUT);
+    digitalWrite(HEPTA_OBC_LEDS[i], LOW);
   }
   for (int cycle = 0; cycle < 3; cycle++) {
-    for (size_t i = 0; i < BOARD_LED_COUNT; i++) {
-      digitalWrite(BOARD_LEDS[i], HIGH);
+    for (size_t i = 0; i < HEPTA_OBC_LED_COUNT; i++) {
+      digitalWrite(HEPTA_OBC_LEDS[i], HIGH);
     }
     delay(300);
-    for (size_t i = 0; i < BOARD_LED_COUNT; i++) {
-      digitalWrite(BOARD_LEDS[i], LOW);
+    for (size_t i = 0; i < HEPTA_OBC_LED_COUNT; i++) {
+      digitalWrite(HEPTA_OBC_LEDS[i], LOW);
     }
     delay(300);
   }
@@ -379,12 +377,6 @@ bool run_camera_test(void) {
     file.close();
   }
   sensor.camera_invalidate();
-  pinMode(0, OUTPUT);
-  digitalWrite(0, HIGH);
-  pinMode(3, OUTPUT);
-  digitalWrite(3, HIGH);
-  pinMode(17, OUTPUT);
-  digitalWrite(17, HIGH);
   bool size_ok = size >= 1000;
   log_progress("CAM: %s FILE=%s SIZE=%lu", size_ok ? "OK" : "NG", filename, (unsigned long)size);
   return size_ok;
@@ -600,8 +592,6 @@ void setup(void) {
 
   eps.init();
   eps.switch_3V3_on();
-  pinMode(17, OUTPUT);
-  digitalWrite(17, HIGH);
   delay(800);
 
   com.begin();
