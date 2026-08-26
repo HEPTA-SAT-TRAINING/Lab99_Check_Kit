@@ -1,13 +1,5 @@
 #include "src/HeptaSat.h"
 
-#include <Arduino.h>
-#include <SD.h>
-#include <ctype.h>
-#include <math.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-
 HeptaCdh cdh;
 HeptaCom com;
 HeptaEps eps;
@@ -19,28 +11,28 @@ static const uint32_t GPS_SENTENCE_TIMEOUT_MS = 3000;
 static const uint32_t XBEE_RX_TIMEOUT_MS = 30000;
 static const uint32_t XBEE_AT_TIMEOUT_MS = 1000;
 static const uint32_t XBEE_LINE_IDLE_MS = 300;
-static const size_t SERIAL_LINE_MAX = 80;
 static const size_t SESSION_FIELD_MAX = 64;
-static const size_t LOG_MSG_MAX = 160;
 
 static uint32_t image_index = 1;
-static char serial_line[SERIAL_LINE_MAX];
-static size_t serial_line_len = 0;
-static bool gps_uart_live = false;
 
 static char session_date[SESSION_FIELD_MAX] = "-";
 static char session_kit[SESSION_FIELD_MAX] = "-";
 static char session_operator[SESSION_FIELD_MAX] = "-";
 
 void log_progress(const char *fmt, ...) {
-  char body[LOG_MSG_MAX];
   va_list args;
-  va_start(args, fmt);
-  vsnprintf(body, sizeof(body), fmt, args);
-  va_end(args);
 
-  cdh.printf("[CDH] %s\n", body);
-  com.printf("From Sat: %s\n", body);
+  cdh.print("[CDH] ");
+  va_start(args, fmt);
+  cdh.vprintf(fmt, args);
+  va_end(args);
+  cdh.println("");
+
+  com.print("From Sat: ");
+  va_start(args, fmt);
+  com.vprintf(fmt, args);
+  va_end(args);
+  com.println("");
 }
 
 void sanitize_session_field(char *s, size_t size) {
@@ -165,29 +157,6 @@ void make_next_image_filename(char *out, size_t out_size) {
   if (image_index > 9999) {
     image_index = 1;
   }
-}
-
-void xbee_pause_gps_pio(void) {
-  if (gps_uart_live) {
-    sensor.gps_end();
-    gps_uart_live = false;
-  }
-}
-
-void xbee_resume_gps_pio(void) {
-  if (!gps_uart_live) {
-    sensor.gps_begin();
-    gps_uart_live = true;
-  }
-}
-
-bool xbee_enter_command_mode(void) {
-  xbee_pause_gps_pio();
-  if (!com.enter_command_mode()) {
-    xbee_resume_gps_pio();
-    return false;
-  }
-  return true;
 }
 
 bool xbee_query(const char *command, char *value, size_t value_size) {
@@ -326,7 +295,7 @@ bool run_sd_test(void) {
     log_progress("SD: NG (open write failed)");
     return false;
   }
-  size_t written = file.print(payload);
+  size_t written = cdh.write_file(file, payload);
   file.close();
   if (written == 0) {
     log_progress("SD: NG (write failed)");
@@ -338,14 +307,14 @@ bool run_sd_test(void) {
     log_progress("SD: NG (open read failed)");
     return false;
   }
-  char buffer[32];
-  int n = file.read(buffer, sizeof(buffer) - 1);
+  uint8_t buffer[32];
+  int n = cdh.read_file(file, buffer, sizeof(buffer) - 1);
   file.close();
   if (n < 0) {
     n = 0;
   }
   buffer[n] = '\0';
-  bool ok = (strcmp(buffer, payload) == 0);
+  bool ok = (strcmp(reinterpret_cast<char *>(buffer), payload) == 0);
   log_progress("SD: %s (wrote/read CHECK.TXT)", ok ? "OK" : "NG");
   return ok;
 }
@@ -376,59 +345,20 @@ bool run_camera_test(void) {
   return size_ok;
 }
 
-bool is_nmea_talker(const char *sentence) {
-  if (sentence == NULL || sentence[0] != '$' || sentence[1] != 'G') {
-    return false;
-  }
-  char third = sentence[2];
-  return third == 'P' || third == 'N' || third == 'L';
-}
-
 bool run_gps_test(void) {
-  char sentence[88];
-  size_t slen = 0;
-  bool in_sentence = false;
-  bool found = false;
   uint32_t start_ms = millis();
 
   while ((uint32_t)(millis() - start_ms) < GPS_SENTENCE_TIMEOUT_MS) {
-    int value = sensor.gps_read_byte();
-    if (value < 0) {
-      delay(1);
-      continue;
+    if (sensor.gps_is_data_available()) {
+      sensor.gps_read_byte();
+      log_progress("GPS: OK (NMEA data received)");
+      return true;
     }
-    char c = (char)value;
-    if (c == '$') {
-      in_sentence = true;
-      slen = 0;
-      sentence[slen++] = c;
-      continue;
-    }
-    if (!in_sentence) {
-      continue;
-    }
-    if (c == '\r') {
-      continue;
-    }
-    if (c == '\n' || slen >= sizeof(sentence) - 1) {
-      sentence[slen] = '\0';
-      in_sentence = false;
-      if (is_nmea_talker(sentence)) {
-        found = true;
-        break;
-      }
-      slen = 0;
-      continue;
-    }
-    sentence[slen++] = c;
+    delay(1);
   }
 
-  if (found) {
-    log_progress("GPS: OK (NMEA received)");
-  } else {
-    log_progress("GPS: NG (no NMEA within timeout)");
-  }
-  return found;
+  log_progress("GPS: NG (no NMEA data within timeout)");
+  return false;
 }
 
 bool run_xbee_identity(void) {
@@ -437,9 +367,8 @@ bool run_xbee_identity(void) {
   char my[12] = "";
   char id[20] = "";
 
-  if (!xbee_enter_command_mode()) {
+  if (!com.enter_command_mode()) {
     log_progress("XBEE_ID: NG (AT mode failed)");
-    xbee_resume_gps_pio();
     return false;
   }
 
@@ -448,7 +377,6 @@ bool run_xbee_identity(void) {
             && xbee_query("ATMY\r", my, sizeof(my))
             && xbee_query("ATID\r", id, sizeof(id));
   com.exit_command_mode();
-  xbee_resume_gps_pio();
 
   if (!ok) {
     log_progress("XBEE_ID: NG (AT query failed)");
@@ -459,12 +387,6 @@ bool run_xbee_identity(void) {
 }
 
 bool run_xbee_rx_test(void) {
-  // Leave AT mode if a previous identity check left the radio there.
-  if (com.enter_command_mode()) {
-    com.exit_command_mode();
-  }
-  delay(1200);
-
   log_progress("XBEE_RX: send a command from the PC via XBee (30s)");
   uint32_t start_ms = millis();
   while ((uint32_t)(millis() - start_ms) < XBEE_RX_TIMEOUT_MS) {
@@ -559,23 +481,10 @@ void poll_xbee_commands(void) {
 }
 
 void poll_serial_commands(void) {
-  while (Serial.available() > 0) {
-    char c = (char)Serial.read();
-    if (c == '\r') {
-      continue;
-    }
-    if (c == '\n') {
-      serial_line[serial_line_len] = '\0';
-      if (serial_line_len == 1) {
-        handle_command(serial_line[0]);
-      } else if (serial_line_len > 1) {
-        log_progress("COMMAND: unknown line");
-      }
-      serial_line_len = 0;
-      continue;
-    }
-    if (serial_line_len + 1 < sizeof(serial_line)) {
-      serial_line[serial_line_len++] = c;
+  if (cdh.is_cmd_received()) {
+    char cmd = cdh.get_command();
+    if (cmd != '\0') {
+      handle_command(cmd);
     }
   }
 }
@@ -589,12 +498,9 @@ void setup(void) {
   delay(800);
 
   com.begin();
-  if (xbee_enter_command_mode()) {
-    com.exit_command_mode();
-  }
+  com.set_transparent_mode();
 
   sensor.begin();
-  gps_uart_live = true;
 
   log_progress("BOOT READY FW=System-Check VER=3");
   prompt_session_info();
