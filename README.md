@@ -2,9 +2,6 @@
 
 Manual verification Arduino sketches for HEPTA-SAT Full.
 
-The staff full kit (station automation and Python tools) lives in a separate repository:  
-https://github.com/HEPTA-SAT-TRAINING/Lab99_Check_Kit_Staff
-
 ## Contents
 
 | Path | Description |
