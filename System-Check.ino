@@ -14,6 +14,8 @@ static const uint32_t XBEE_REPLY_TIMEOUT_MS = 30000;
 static const uint32_t XBEE_AT_TIMEOUT_MS = 1000;
 static const uint32_t XBEE_LINE_IDLE_MS = 300;
 static const size_t SESSION_FIELD_MAX = 64;
+static const size_t NAME_WIDTH = 10;
+static const int FW_VER = 6;
 
 static uint32_t image_index = 1;
 
@@ -21,20 +23,69 @@ static char session_date[SESSION_FIELD_MAX] = "-";
 static char session_kit[SESSION_FIELD_MAX] = "-";
 static char session_operator[SESSION_FIELD_MAX] = "-";
 
-void log_progress(const char *fmt, ...) {
+void log_com(const char *fmt, ...) {
   va_list args;
-
-  cdh.print("[CDH] ");
-  va_start(args, fmt);
-  cdh.vprintf(fmt, args);
-  va_end(args);
-  cdh.println("");
-
-  com.print("From Sat: ");
   va_start(args, fmt);
   com.vprintf(fmt, args);
   va_end(args);
   com.println("");
+}
+
+void log_cdh(const char *msg) {
+  cdh.print("[CDH] ");
+  cdh.println(msg);
+}
+
+void print_cdh_banner(void) {
+  log_cdh("System-Check firmware is running (VER=6).");
+  log_cdh(
+      "Do not send commands here. Operate from the peer XBee "
+      "(HEPTA-SAT-Serial_Monitor, 38400).");
+}
+
+void drain_usb_input(void) {
+  if (Serial.available() <= 0) {
+    return;
+  }
+  while (Serial.available() > 0) {
+    (void)Serial.read();
+  }
+  log_cdh(
+      "Do not send commands here. Operate from the peer XBee "
+      "(HEPTA-SAT-Serial_Monitor, 38400).");
+}
+
+void print_padded_name(const char *name) {
+  size_t len = strlen(name);
+  com.print(name);
+  while (len < NAME_WIDTH) {
+    com.print(" ");
+    len++;
+  }
+}
+
+void log_status(bool ok, const char *name, const char *detail) {
+  com.print(ok ? " OK  " : " NG  ");
+  print_padded_name(name);
+  if (detail != NULL && detail[0] != '\0') {
+    com.print("  ");
+    com.print(detail);
+  }
+  com.println("");
+}
+
+void log_action(const char *name, const char *msg) {
+  com.print(" >>  ");
+  print_padded_name(name);
+  if (msg != NULL && msg[0] != '\0') {
+    com.print("  ");
+    com.print(msg);
+  }
+  com.println("");
+}
+
+void print_cmd_prompt(void) {
+  log_com("cmd>  a l e i t m s c g n p");
 }
 
 void sanitize_session_field(char *s, size_t size) {
@@ -94,24 +145,17 @@ bool read_session_line(char *out, size_t out_size) {
       break;
     }
     if (Serial.available() > 0) {
-      break;
+      while (Serial.available() > 0) {
+        (void)Serial.read();
+      }
     }
     delay(1);
   }
 
   while (true) {
-    while (Serial.available() > 0) {
-      char c = (char)Serial.read();
-      if (c == '\r') {
-        continue;
-      }
-      if (c == '\n') {
-        sanitize_session_field(out, out_size);
-        return true;
-      }
-      if (n + 1 < out_size) {
-        out[n++] = c;
-        out[n] = '\0';
+    if (Serial.available() > 0) {
+      while (Serial.available() > 0) {
+        (void)Serial.read();
       }
     }
 
@@ -140,17 +184,26 @@ bool read_session_line(char *out, size_t out_size) {
 }
 
 void prompt_session_info(void) {
-  log_progress("SESSION: enter DATE (any text), then Send in HEPTA-SAT-Serial_Monitor");
+  log_com("DATE?");
   read_session_line(session_date, sizeof(session_date));
-  log_progress("SESSION: DATE=%s", session_date);
 
-  log_progress("SESSION: enter KIT name (any text), then Send");
+  log_com("KIT?");
   read_session_line(session_kit, sizeof(session_kit));
-  log_progress("SESSION: KIT=%s", session_kit);
 
-  log_progress("SESSION: enter OPERATOR (any text), then Send");
+  log_com("OPERATOR?");
   read_session_line(session_operator, sizeof(session_operator));
-  log_progress("SESSION: OPERATOR=%s", session_operator);
+
+  log_com("");
+  print_padded_name("DATE");
+  com.print("  ");
+  com.println(session_date);
+  print_padded_name("KIT");
+  com.print("  ");
+  com.println(session_kit);
+  print_padded_name("OPERATOR");
+  com.print("  ");
+  com.println(session_operator);
+  log_com("");
 }
 
 void make_next_image_filename(char *out, size_t out_size) {
@@ -176,7 +229,7 @@ bool xbee_query(const char *command, char *value, size_t value_size) {
 }
 
 bool run_led_test(void) {
-  log_progress("LED: blinking OBC LEDs — confirm visually");
+  log_action("LED", "confirm OBC LEDs blink");
   for (size_t i = 0; i < HEPTA_OBC_LED_COUNT; i++) {
     pinMode(HEPTA_OBC_LEDS[i], OUTPUT);
     digitalWrite(HEPTA_OBC_LEDS[i], LOW);
@@ -191,7 +244,7 @@ bool run_led_test(void) {
     }
     delay(300);
   }
-  log_progress("LED: OK");
+  log_status(true, "LED", NULL);
   return true;
 }
 
@@ -200,25 +253,30 @@ bool run_eps_test(void) {
   float v5 = eps.get_5v_voltage();
   float v3 = eps.get_3v3_voltage();
   float sap = eps.get_sap_voltage();
-  log_progress("EPS: BUS=%.3f V5=%.3f V3V3=%.3f SAP=%.3f", bus, v5, v3, sap);
   bool ok = (v3 >= 3.0f && v3 <= 3.6f) && (v5 >= 4.5f && v5 <= 5.5f);
-  log_progress("EPS: %s", ok ? "OK" : "NG");
+  char detail[96];
+  snprintf(
+      detail,
+      sizeof(detail),
+      "BUS=%.2f  V5=%.2f  V3V3=%.2f  SAP=%.2f",
+      bus,
+      v5,
+      v3,
+      sap);
+  log_status(ok, "EPS", detail);
   return ok;
 }
 
 bool run_current_test(void) {
-  log_progress("CURRENT: shine light on the solar panel and watch ISOL change");
-  float isol = 0.0f;
-  float ibus = 0.0f;
-  float ichg = 0.0f;
+  log_action("CURRENT", "shine light on solar panel");
   float isol_max = 0.0f;
   float ibus_max = 0.0f;
   float ichg_max = 0.0f;
 
   for (uint32_t sample = 0; sample < CURRENT_SAMPLE_COUNT; sample++) {
-    isol = eps.get_current_solar();
-    ibus = eps.get_current_bus();
-    ichg = eps.get_current_charge();
+    float isol = eps.get_current_solar();
+    float ibus = eps.get_current_bus();
+    float ichg = eps.get_current_charge();
     if (isol > isol_max) {
       isol_max = isol;
     }
@@ -228,42 +286,50 @@ bool run_current_test(void) {
     if (ichg > ichg_max) {
       ichg_max = ichg;
     }
-    log_progress(
-        "CURRENT sample %lu: ISOL=%.3f IBUS=%.3f ICHG=%.3f",
-        (unsigned long)(sample + 1),
-        isol,
-        ibus,
-        ichg);
     if (sample + 1 < CURRENT_SAMPLE_COUNT) {
       delay(CURRENT_SAMPLE_INTERVAL_MS);
     }
   }
 
   bool ok = ibus_max >= 0.01f;
-  if (!ok) {
-    log_progress("CURRENT: NG (IBUS too low — check shunt / MCP3208 / GP28)");
-  } else {
-    log_progress(
-        "CURRENT: OK (ISOL_MAX=%.3f IBUS_MAX=%.3f ICHG_MAX=%.3f)",
+  char detail[96];
+  if (ok) {
+    snprintf(
+        detail,
+        sizeof(detail),
+        "ISOL=%.2f  IBUS=%.2f  ICHG=%.2f",
         isol_max,
         ibus_max,
         ichg_max);
+  } else {
+    snprintf(
+        detail,
+        sizeof(detail),
+        "IBUS=%.2f need>=0.01  ISOL=%.2f  ICHG=%.2f",
+        ibus_max,
+        isol_max,
+        ichg_max);
   }
+  log_status(ok, "CURRENT", detail);
   return ok;
 }
 
 bool run_temperature_test(void) {
   float temp_c = sensor.get_temperature();
   bool ok = (temp_c >= TEMP_MIN_C && temp_c <= TEMP_MAX_C);
+  char detail[64];
   if (ok) {
-    log_progress("TEMP: %.2f C — OK", temp_c);
+    snprintf(detail, sizeof(detail), "%.1f C", temp_c);
   } else {
-    log_progress(
-        "TEMP: NG (%.2f C, expected %.1f to %.1f C)",
+    snprintf(
+        detail,
+        sizeof(detail),
+        "%.1f C need %.0f-%.0f",
         temp_c,
         TEMP_MIN_C,
         TEMP_MAX_C);
   }
+  log_status(ok, "TEMP", detail);
   return ok;
 }
 
@@ -288,13 +354,16 @@ bool run_imu_test(void) {
   }
 
   bool ok = acc_ok && norm >= 0.5f;
-  log_progress(
-      "IMU: |a|=%.2f AX=%.3f AY=%.3f AZ=%.3f — %s",
+  char detail[80];
+  snprintf(
+      detail,
+      sizeof(detail),
+      "|a|=%.2f  AX=%.2f  AY=%.2f  AZ=%.2f",
       norm,
       ax,
       ay,
-      az,
-      ok ? "OK" : "NG");
+      az);
+  log_status(ok, "IMU", detail);
   return ok;
 }
 
@@ -303,19 +372,19 @@ bool run_sd_test(void) {
   const char *payload = "System-Check";
   File file = cdh.create_file(filename);
   if (!file) {
-    log_progress("SD: NG (open write failed)");
+    log_status(false, "SD", "open write failed");
     return false;
   }
   size_t written = cdh.write_file(file, payload);
   file.close();
   if (written == 0) {
-    log_progress("SD: NG (write failed)");
+    log_status(false, "SD", "write failed");
     return false;
   }
 
   file = cdh.open_file(filename, FILE_READ);
   if (!file) {
-    log_progress("SD: NG (open read failed)");
+    log_status(false, "SD", "open read failed");
     return false;
   }
   uint8_t buffer[32];
@@ -326,22 +395,21 @@ bool run_sd_test(void) {
   }
   buffer[n] = '\0';
   bool ok = (strcmp(reinterpret_cast<char *>(buffer), payload) == 0);
-  log_progress("SD: %s (wrote/read CHECK.TXT)", ok ? "OK" : "NG");
+  log_status(ok, "SD", ok ? NULL : "readback mismatch");
   return ok;
 }
 
 bool run_camera_test(void) {
   char filename[13];
   make_next_image_filename(filename, sizeof(filename));
-  log_progress("CAM: capturing %s", filename);
   bool ok = sensor.camera_snapshot(filename);
   if (!ok) {
-    log_progress("CAM: NG (capture failed)");
+    log_status(false, "CAM", "capture failed");
     sensor.camera_invalidate();
     return false;
   }
   if (!cdh.file_exists(filename)) {
-    log_progress("CAM: NG (file missing)");
+    log_status(false, "CAM", "file missing");
     sensor.camera_invalidate();
     return false;
   }
@@ -352,7 +420,18 @@ bool run_camera_test(void) {
   }
   sensor.camera_invalidate();
   bool size_ok = size >= 1000;
-  log_progress("CAM: %s FILE=%s SIZE=%lu", size_ok ? "OK" : "NG", filename, (unsigned long)size);
+  char detail[48];
+  if (size_ok) {
+    snprintf(detail, sizeof(detail), "%s  %lu B", filename, (unsigned long)size);
+  } else {
+    snprintf(
+        detail,
+        sizeof(detail),
+        "%s  %lu B need>=1000",
+        filename,
+        (unsigned long)size);
+  }
+  log_status(size_ok, "CAM", detail);
   return size_ok;
 }
 
@@ -362,13 +441,13 @@ bool run_gps_test(void) {
   while ((uint32_t)(millis() - start_ms) < GPS_SENTENCE_TIMEOUT_MS) {
     if (sensor.gps_is_data_available()) {
       sensor.gps_read_byte();
-      log_progress("GPS: OK (NMEA data received)");
+      log_status(true, "GPS", NULL);
       return true;
     }
     delay(1);
   }
 
-  log_progress("GPS: NG (no NMEA data within timeout)");
+  log_status(false, "GPS", "no NMEA in 3s");
   return false;
 }
 
@@ -379,7 +458,7 @@ bool run_xbee_identity(void) {
   char id[20] = "";
 
   if (!com.enter_command_mode()) {
-    log_progress("XBEE_ID: NG (AT mode failed)");
+    log_status(false, "XBEE_ID", "AT mode failed");
     return false;
   }
 
@@ -390,37 +469,35 @@ bool run_xbee_identity(void) {
   com.exit_command_mode();
 
   if (!ok) {
-    log_progress("XBEE_ID: NG (AT query failed)");
+    log_status(false, "XBEE_ID", "AT query failed");
     return false;
   }
-  log_progress("XBEE_ID: OK SH=%s SL=%s MY=%s ID=%s", sh, sl, my, id);
+  char detail[80];
+  snprintf(detail, sizeof(detail), "SH=%s  SL=%s  MY=%s  ID=%s", sh, sl, my, id);
+  log_status(true, "XBEE_ID", detail);
   return true;
 }
 
 bool run_xbee_link_test(void) {
-  log_progress("XBEE_LINK: PING — reply with any text from the PC (30s)");
+  log_action("XBEE_LINK", "reply with any text (30s)");
   uint32_t start_ms = millis();
   while ((uint32_t)(millis() - start_ms) < XBEE_REPLY_TIMEOUT_MS) {
     if (com.is_cmd_received()) {
       char c = com.get_command();
       if (c != '\0') {
-        log_progress("XBEE_LINK: OK (reply received: '%c')", c);
+        char detail[24];
+        snprintf(detail, sizeof(detail), "got '%c'", c);
+        log_status(true, "XBEE_LINK", detail);
         return true;
       }
     }
     delay(1);
   }
-  log_progress("XBEE_LINK: NG (timeout — no reply received)");
+  log_status(false, "XBEE_LINK", "timeout");
   return false;
 }
 
 bool run_test_all(void) {
-  log_progress(
-      "SESSION DATE=%s KIT=%s OPERATOR=%s",
-      session_date,
-      session_kit,
-      session_operator);
-
   struct Item {
     const char *name;
     bool (*run)(void);
@@ -442,102 +519,73 @@ bool run_test_all(void) {
   bool results[sizeof(items) / sizeof(items[0])];
   size_t passed = 0;
 
-  log_progress("TEST_ALL: starting 0/%u OK", (unsigned)total);
+  log_com("running %u checks", (unsigned)total);
+  log_com("");
 
   for (size_t i = 0; i < total; i++) {
-    log_progress(
-        "CHECK %u/%u %s (OK %u/%u so far)",
-        (unsigned)(i + 1),
-        (unsigned)total,
-        items[i].name,
-        (unsigned)passed,
-        (unsigned)total);
     results[i] = items[i].run();
     if (results[i]) {
       passed++;
     }
-    log_progress(
-        "RESULT %u/%u %s=%s (OK %u/%u)",
-        (unsigned)(i + 1),
-        (unsigned)total,
-        items[i].name,
-        results[i] ? "OK" : "NG",
-        (unsigned)passed,
-        (unsigned)total);
   }
 
-  bool all_ok = (passed == total);
-  log_progress(
-      "TEST_ALL: %s %u/%u",
-      all_ok ? "OK" : "NG",
-      (unsigned)passed,
-      (unsigned)total);
+  log_com("");
+  log_com("%u/%u passed", (unsigned)passed, (unsigned)total);
 
-  char summary[160];
-  size_t n = 0;
-  n += (size_t)snprintf(summary, sizeof(summary), "TEST_ALL SUMMARY:");
-  for (size_t i = 0; i < total && n < sizeof(summary); i++) {
-    int w = snprintf(
-        summary + n,
-        sizeof(summary) - n,
-        " %s=%s",
-        items[i].name,
-        results[i] ? "OK" : "NG");
-    if (w < 0) {
-      break;
+  if (passed < total) {
+    com.print("failed:");
+    for (size_t i = 0; i < total; i++) {
+      if (!results[i]) {
+        com.print(" ");
+        com.print(items[i].name);
+      }
     }
-    n += (size_t)w;
+    com.println("");
   }
-  log_progress("%s", summary);
 
-  return all_ok;
+  return passed == total;
 }
 
 void handle_command(char cmd) {
-  log_progress("COMMAND: '%c' accepted", cmd);
-  bool ok = true;
-
   switch (cmd) {
     case 'a':
-      ok = run_test_all();
+      run_test_all();
       break;
     case 'l':
-      ok = run_led_test();
+      run_led_test();
       break;
     case 'e':
-      ok = run_eps_test();
+      run_eps_test();
       break;
     case 'i':
-      ok = run_current_test();
+      run_current_test();
       break;
     case 't':
-      ok = run_temperature_test();
+      run_temperature_test();
       break;
     case 'm':
-      ok = run_imu_test();
+      run_imu_test();
       break;
     case 's':
-      ok = run_sd_test();
+      run_sd_test();
       break;
     case 'c':
-      ok = run_camera_test();
+      run_camera_test();
       break;
     case 'g':
-      ok = run_gps_test();
+      run_gps_test();
       break;
     case 'n':
-      ok = run_xbee_identity();
+      run_xbee_identity();
       break;
     case 'p':
-      ok = run_xbee_link_test();
+      run_xbee_link_test();
       break;
     default:
-      ok = false;
-      log_progress("COMMAND: unknown '%c'", cmd);
+      log_com("unknown: '%c'", cmd);
       break;
   }
-
-  log_progress("COMMAND_DONE: '%c' %s", cmd, ok ? "OK" : "NG");
+  print_cmd_prompt();
 }
 
 void poll_xbee_commands(void) {
@@ -547,15 +595,6 @@ void poll_xbee_commands(void) {
   char cmd = com.get_command();
   if (cmd != '\0') {
     handle_command(cmd);
-  }
-}
-
-void poll_serial_commands(void) {
-  if (cdh.is_cmd_received()) {
-    char cmd = cdh.get_command();
-    if (cmd != '\0') {
-      handle_command(cmd);
-    }
   }
 }
 
@@ -572,14 +611,19 @@ void setup(void) {
 
   sensor.begin();
 
-  log_progress("BOOT READY FW=System-Check VER=5");
+  print_cdh_banner();
+
+  log_com("System-Check %d", FW_VER);
+  log_com("Operate from this XBee window (USB is monitor-only).");
+  log_com("");
   prompt_session_info();
-  handle_command('a');
-  log_progress("All tests finished. Send a/l/e/i/t/m/s/c/g/n/p to re-run individual tests");
+  run_test_all();
+  log_com("");
+  print_cmd_prompt();
 }
 
 void loop(void) {
-  poll_serial_commands();
+  drain_usb_input();
   poll_xbee_commands();
   delay(1);
 }
