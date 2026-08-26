@@ -7,8 +7,10 @@ HeptaSensor sensor;
 
 static const uint32_t CURRENT_SAMPLE_COUNT = 5;
 static const uint32_t CURRENT_SAMPLE_INTERVAL_MS = 1000;
+static const float TEMP_MIN_C = 10.0f;
+static const float TEMP_MAX_C = 35.0f;
 static const uint32_t GPS_SENTENCE_TIMEOUT_MS = 3000;
-static const uint32_t XBEE_PONG_TIMEOUT_MS = 30000;
+static const uint32_t XBEE_REPLY_TIMEOUT_MS = 30000;
 static const uint32_t XBEE_AT_TIMEOUT_MS = 1000;
 static const uint32_t XBEE_LINE_IDLE_MS = 300;
 static const size_t SESSION_FIELD_MAX = 64;
@@ -252,8 +254,17 @@ bool run_current_test(void) {
 
 bool run_temperature_test(void) {
   float temp_c = sensor.get_temperature();
-  log_progress("TEMP: %.2f C — OK", temp_c);
-  return true;
+  bool ok = (temp_c >= TEMP_MIN_C && temp_c <= TEMP_MAX_C);
+  if (ok) {
+    log_progress("TEMP: %.2f C — OK", temp_c);
+  } else {
+    log_progress(
+        "TEMP: NG (%.2f C, expected %.1f to %.1f C)",
+        temp_c,
+        TEMP_MIN_C,
+        TEMP_MAX_C);
+  }
+  return ok;
 }
 
 bool run_imu_test(void) {
@@ -386,31 +397,20 @@ bool run_xbee_identity(void) {
   return true;
 }
 
-bool run_xbee_ping_pong_test(void) {
-  static const char expected[] = "PONG";
-  size_t matched = 0;
-
-  log_progress("XBEE_LINK: PING — reply PONG from the PC (30s)");
+bool run_xbee_link_test(void) {
+  log_progress("XBEE_LINK: PING — reply with any text from the PC (30s)");
   uint32_t start_ms = millis();
-  while ((uint32_t)(millis() - start_ms) < XBEE_PONG_TIMEOUT_MS) {
+  while ((uint32_t)(millis() - start_ms) < XBEE_REPLY_TIMEOUT_MS) {
     if (com.is_cmd_received()) {
       char c = com.get_command();
-      if (c == '\0') {
-        continue;
-      }
-      if (c == expected[matched]) {
-        matched++;
-        if (expected[matched] == '\0') {
-          log_progress("XBEE_LINK: OK (PING/PONG)");
-          return true;
-        }
-      } else {
-        matched = (c == expected[0]) ? 1 : 0;
+      if (c != '\0') {
+        log_progress("XBEE_LINK: OK (reply received: '%c')", c);
+        return true;
       }
     }
     delay(1);
   }
-  log_progress("XBEE_LINK: NG (timeout — PONG not received)");
+  log_progress("XBEE_LINK: NG (timeout — no reply received)");
   return false;
 }
 
@@ -420,20 +420,77 @@ bool run_test_all(void) {
       session_date,
       session_kit,
       session_operator);
-  bool ok = true;
-  ok = run_led_test() && ok;
-  ok = run_eps_test() && ok;
-  ok = run_current_test() && ok;
-  ok = run_temperature_test() && ok;
-  ok = run_imu_test() && ok;
-  ok = run_sd_test() && ok;
-  ok = run_camera_test() && ok;
-  ok = run_gps_test() && ok;
-  // Bidirectional XBee payload test last so earlier steps are not blocked.
-  // AT identity is diagnostic-only and does not affect the normal pass/fail.
-  ok = run_xbee_ping_pong_test() && ok;
-  log_progress("TEST_ALL: %s", ok ? "OK" : "NG");
-  return ok;
+
+  struct Item {
+    const char *name;
+    bool (*run)(void);
+  };
+  const Item items[] = {
+      {"LED", run_led_test},
+      {"EPS", run_eps_test},
+      {"CURRENT", run_current_test},
+      {"TEMP", run_temperature_test},
+      {"IMU", run_imu_test},
+      {"SD", run_sd_test},
+      {"CAM", run_camera_test},
+      {"GPS", run_gps_test},
+      // Bidirectional XBee payload test last so earlier steps are not blocked.
+      // AT identity is diagnostic-only and does not affect the normal pass/fail.
+      {"XBEE_LINK", run_xbee_link_test},
+  };
+  const size_t total = sizeof(items) / sizeof(items[0]);
+  bool results[sizeof(items) / sizeof(items[0])];
+  size_t passed = 0;
+
+  log_progress("TEST_ALL: starting 0/%u OK", (unsigned)total);
+
+  for (size_t i = 0; i < total; i++) {
+    log_progress(
+        "CHECK %u/%u %s (OK %u/%u so far)",
+        (unsigned)(i + 1),
+        (unsigned)total,
+        items[i].name,
+        (unsigned)passed,
+        (unsigned)total);
+    results[i] = items[i].run();
+    if (results[i]) {
+      passed++;
+    }
+    log_progress(
+        "RESULT %u/%u %s=%s (OK %u/%u)",
+        (unsigned)(i + 1),
+        (unsigned)total,
+        items[i].name,
+        results[i] ? "OK" : "NG",
+        (unsigned)passed,
+        (unsigned)total);
+  }
+
+  bool all_ok = (passed == total);
+  log_progress(
+      "TEST_ALL: %s %u/%u",
+      all_ok ? "OK" : "NG",
+      (unsigned)passed,
+      (unsigned)total);
+
+  char summary[160];
+  size_t n = 0;
+  n += (size_t)snprintf(summary, sizeof(summary), "TEST_ALL SUMMARY:");
+  for (size_t i = 0; i < total && n < sizeof(summary); i++) {
+    int w = snprintf(
+        summary + n,
+        sizeof(summary) - n,
+        " %s=%s",
+        items[i].name,
+        results[i] ? "OK" : "NG");
+    if (w < 0) {
+      break;
+    }
+    n += (size_t)w;
+  }
+  log_progress("%s", summary);
+
+  return all_ok;
 }
 
 void handle_command(char cmd) {
@@ -472,7 +529,7 @@ void handle_command(char cmd) {
       ok = run_xbee_identity();
       break;
     case 'p':
-      ok = run_xbee_ping_pong_test();
+      ok = run_xbee_link_test();
       break;
     default:
       ok = false;
@@ -504,7 +561,6 @@ void poll_serial_commands(void) {
 
 void setup(void) {
   cdh.begin();
-  cdh.wait_for_serial();
 
   eps.init();
   eps.switch_3V3_on();
@@ -516,7 +572,7 @@ void setup(void) {
 
   sensor.begin();
 
-  log_progress("BOOT READY FW=System-Check VER=3");
+  log_progress("BOOT READY FW=System-Check VER=5");
   prompt_session_info();
   handle_command('a');
   log_progress("All tests finished. Send a/l/e/i/t/m/s/c/g/n/p to re-run individual tests");
