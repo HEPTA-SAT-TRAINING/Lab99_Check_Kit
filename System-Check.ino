@@ -8,7 +8,7 @@ HeptaSensor sensor;
 static const uint32_t CURRENT_SAMPLE_COUNT = 5;
 static const uint32_t CURRENT_SAMPLE_INTERVAL_MS = 1000;
 static const uint32_t GPS_SENTENCE_TIMEOUT_MS = 3000;
-static const uint32_t XBEE_RX_TIMEOUT_MS = 30000;
+static const uint32_t XBEE_PONG_TIMEOUT_MS = 30000;
 static const uint32_t XBEE_AT_TIMEOUT_MS = 1000;
 static const uint32_t XBEE_LINE_IDLE_MS = 300;
 static const size_t SESSION_FIELD_MAX = 64;
@@ -386,18 +386,31 @@ bool run_xbee_identity(void) {
   return true;
 }
 
-bool run_xbee_rx_test(void) {
-  log_progress("XBEE_RX: send a command from the PC via XBee (30s)");
+bool run_xbee_ping_pong_test(void) {
+  static const char expected[] = "PONG";
+  size_t matched = 0;
+
+  log_progress("XBEE_LINK: PING — reply PONG from the PC (30s)");
   uint32_t start_ms = millis();
-  while ((uint32_t)(millis() - start_ms) < XBEE_RX_TIMEOUT_MS) {
+  while ((uint32_t)(millis() - start_ms) < XBEE_PONG_TIMEOUT_MS) {
     if (com.is_cmd_received()) {
-      char cmd = com.get_command();
-      log_progress("XBEE_RX: OK (received '%c')", cmd);
-      return true;
+      char c = com.get_command();
+      if (c == '\0') {
+        continue;
+      }
+      if (c == expected[matched]) {
+        matched++;
+        if (expected[matched] == '\0') {
+          log_progress("XBEE_LINK: OK (PING/PONG)");
+          return true;
+        }
+      } else {
+        matched = (c == expected[0]) ? 1 : 0;
+      }
     }
     delay(1);
   }
-  log_progress("XBEE_RX: NG (timeout — no command from PC)");
+  log_progress("XBEE_LINK: NG (timeout — PONG not received)");
   return false;
 }
 
@@ -416,9 +429,9 @@ bool run_test_all(void) {
   ok = run_sd_test() && ok;
   ok = run_camera_test() && ok;
   ok = run_gps_test() && ok;
-  ok = run_xbee_identity() && ok;
-  // Interactive RX last so earlier steps are not blocked.
-  ok = run_xbee_rx_test() && ok;
+  // Bidirectional XBee payload test last so earlier steps are not blocked.
+  // AT identity is diagnostic-only and does not affect the normal pass/fail.
+  ok = run_xbee_ping_pong_test() && ok;
   log_progress("TEST_ALL: %s", ok ? "OK" : "NG");
   return ok;
 }
@@ -459,7 +472,7 @@ void handle_command(char cmd) {
       ok = run_xbee_identity();
       break;
     case 'p':
-      ok = run_xbee_rx_test();
+      ok = run_xbee_ping_pong_test();
       break;
     default:
       ok = false;
@@ -498,7 +511,8 @@ void setup(void) {
   delay(800);
 
   com.begin();
-  com.set_transparent_mode();
+  // The inspection procedure preconfigures the XBee for AP=0 / Transparent
+  // mode. Avoid entering AT Command mode during the normal system check.
 
   sensor.begin();
 

@@ -39,7 +39,7 @@ Use the peer XBee on the PC with [HEPTA-SAT-Serial_Monitor](https://hepta-sat-tr
 
 | Command | Action |
 | --- | --- |
-| `a` | Run all tests (also runs automatically after session metadata; XBee RX test last) |
+| `a` | Run all tests (also runs automatically after session metadata; XBee PING/PONG test last) |
 | `l` | Blink OBC board LEDs (`HEPTA_OBC_LED1`–`3`) |
 | `e` | EPS voltages |
 | `i` | Current sense / ammeter (ISOL / IBUS / ICHG). Shine light on the solar panel and watch ISOL change |
@@ -48,8 +48,8 @@ Use the peer XBee on the PC with [HEPTA-SAT-Serial_Monitor](https://hepta-sat-tr
 | `s` | SD read/write |
 | `c` | Camera capture (JPEG to SD) |
 | `g` | GPS NMEA sentence present (FIX not required) |
-| `n` | XBee AT identity |
-| `p` | Interactive XBee RX test |
+| `n` | Optional XBee AT identity diagnostic (not part of `a`) |
+| `p` | Interactive XBee PING/PONG test |
 
 ### Session header (DATE / KIT / OPERATOR)
 
@@ -70,14 +70,17 @@ The same progress messages go out on two paths.
 | USB (CDH) | `[CDH]` | Arduino Serial Monitor |
 | XBee (COM) | `From Sat:` | Peer XBee on the PC |
 
-### XBee RX test (`p`)
+### XBee PING/PONG test (`p`)
 
 1. Send `p`
-2. `[CDH]` / `From Sat:` ask you to send a command from the PC via XBee
-3. Send any single character (or similar) from the peer XBee
-4. When the kit receives it, you get `XBEE_RX: OK`
+2. Wait for `XBEE_LINK: PING — reply PONG from the PC (30s)`
+3. Send `PONG` from the peer XBee
+4. When the kit receives it, you get `XBEE_LINK: OK (PING/PONG)`
 
-If nothing arrives within 30 seconds, the result is NG. The XBee pair must already be configured.
+If `PONG` does not arrive within 30 seconds, the result is NG. The XBee pair
+must already be configured for `AP=0` / Transparent mode at 38400 baud. The
+optional `n` diagnostic can inspect its AT identity, but its result does not
+affect the normal all-tests result.
 
 ### Current sense / ammeter (`i`)
 
